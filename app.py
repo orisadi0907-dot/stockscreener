@@ -1,5 +1,8 @@
-import sys
-import subprocess
+import pandas as pd
+import yfinance as yf
+import matplotlib.pyplot as plt
+from datetime import datetime
+import streamlit as st  # במידה ואתה משתמש ב-Streamlit להצגה
 
 # התקנה אוטומטית של הספריות הדרושות כדי שיעבוד מכל מקום בלחיצת כפתור אחת
 def install_packages():
