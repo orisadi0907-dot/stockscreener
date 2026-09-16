@@ -1,136 +1,141 @@
-import streamlit as st
-import yfinance as yf
+import sys
+import subprocess
+
+# התקנה אוטומטית של הספריות הדרושות כדי שיעבוד מכל מקום בלחיצת כפתור אחת
+def install_packages():
+    required_packages = ["pandas", "yfinance", "matplotlib"]
+    for package in required_packages:
+        try:
+            __import__(package)
+        except ImportError:
+            subprocess.check_call([sys.executable, "-m", "pip", "install", package])
+
+install_packages()
+
 import pandas as pd
-import plotly.express as px
-import random
+import yfinance as yf
+import matplotlib.pyplot as plt
+from datetime import datetime
 
-st.set_page_config(page_title="Global Ultimate 50 Stock Screener", layout="wide")
+# 1. רשימה מגוונת של מניות (גדולות, בינוניות וקטנות/מיקרו)
+tickers = [
+    # Mega & Large Caps
+    "TSLA", "AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "BRK-B", "JPM", "BAC", "WFC", "C",
+    # Mid Caps
+    "JXN", "BHF", "GNW", "NWLI", "MET", "PRU", "MFC", "LNC", "AEL", "VOYA", "SLF", "GL", "PRI",
+    "PBR", "VALE", "AIG", "HIG", "ALL", "CB", "TRV", "STLA", "FCX", "NUE", "CLF",
+    # Small & Micro Caps (אמינות ופחות מוכרות)
+    "INSW", "DAC", "GSL", "SBLK", "GNK", "ARCH", "AMR", "CEIX", "ARLP", "FLNG",
+    "JAKK", "BBW", "HVT", "VIR", "SXC", "BXC", "PLAB", "WIRE", "PRDO", "MHO",
+    "CCS", "TPH", "GRBK", "VHI", "GENC", "ZEUS", "BOOT", "CAL", "FL", "BHE"
+]
 
-st.title("🌍 Automated Ultimate 50 Screener: Large, Mid & Small-Cap Value Stocks")
-st.write("This fully automated system scans the entire global market ecosystem to find the top 50 most attractive stocks based on Intrinsic Value discount (Margin of Safety), high profit efficiency, and positive cash flow generation.")
-
-@st.cache_data(ttl=3600)
-def get_ultimate_market_pool():
-    """ Dynamically builds a massive global base of large, mid, and small cap tickers """
-    try:
-        # Pulling the core S&P 500 list from Wikipedia
-        url_sp = "https://wikipedia.org"
-        df_sp = pd.read_html(url_sp)
-        tickers = df_sp[0]['Symbol'].tolist()
-        
-        # Adding explicitly combined high-interest global large, mid, and small caps
-        extra_pool = [
-            "AAPL", "MSFT", "GOOGL", "META", "NVDA", "TSLA", "AMZN", "NFLX", "AMD", "QCOM", 
-            "PLTR", "BABA", "ASML", "NIO", "CROX", "DECK", "SKX", "LEVI", "ANF", "AEO", 
-            "ENPH", "SEDG", "FSLR", "PLUG", "CHPT", "RUN", "1105436.TA", "748038.TA", "662577.TA",
-            "NET", "SNOW", "DDOG", "CRWD", "ZS", "OKTA", "MDB", "PATH", "IOT", "X", "NUE"
-        ]
-        return list(set(tickers + extra_pool))
-    except Exception:
-        # Robust fallback mechanism
-        return [
-            "AAPL", "MSFT", "GOOGL", "META", "NVDA", "TSLA", "AMZN", "NFLX", "AMD", "PLTR", 
-            "BABA", "INTC", "QCOM", "CROX", "X", "NUE", "FSLR", "ENPH", "NET", "SNOW"
-        ]
-
-# Load the comprehensive combined database
-market_pool = get_ultimate_market_pool()
-
-# Scan a significantly wider segment (150 tickers) to guarantee exactly 50 qualified results
-sample_size = min(150, len(market_pool))
-tickers_to_scan = random.sample(market_pool, sample_size)
-
-st.info(f"🔄 Scanning an extensive blend of {sample_size} global tickers to rank the ultimate top 50 winning stocks...")
-
-progress_bar = st.progress(0)
-data_list = []
-
-for index, t in enumerate(tickers_to_scan):
-    progress_bar.progress((index + 1) / len(tickers_to_scan))
-    try:
-        t_clean = t.replace('.', '-')
-        stock = yf.Ticker(t_clean)
-        info = stock.info
-        
-        current_price = info.get('currentPrice', None)
-        target_price = info.get('targetMeanPrice', None)
-        market_cap = info.get('marketCap', 0)
-        
-        profit_margin = info.get('profitMargins', None)
-        debt_to_equity = info.get('debtToEquity', None)
-        fcf = info.get('freeCashflow', None)
-        
-        pm_pct = profit_margin * 100 if profit_margin else 0.0
-        de_ratio = debt_to_equity / 100 if debt_to_equity and debt_to_equity > 5 else debt_to_equity if debt_to_equity else 0.0
-        fcf_yield = (fcf / market_cap) * 100 if fcf and market_cap else 0.0
-        
-        # Flexible reliability rule: Must have positive margins to ensure it's a solid business
-        if current_price and target_price and target_price > 0 and market_cap > 0:
-            if pm_pct > 0:
+def scan_and_analyze_market(symbol_list):
+    results = []
+    daily_summaries = {}
+    
+    # בדיקת התאריך הנוכחי של סריקת השוק
+    current_date_str = datetime.now().strftime("%d/%m/%Y")
+    print(f"--- סורק את השוק בזמן אמת עבור תאריך: {current_date_str} ---")
+    
+    for symbol in symbol_list:
+        try:
+            ticker = yf.Ticker(symbol)
+            info = ticker.info
+            hist = ticker.history(period="5d") # מושך היסטוריה קצרה כדי לחשב את השינוי ביום האחרון
+            
+            market_cap = info.get("marketCap")
+            book_value = info.get("bookValue")
+            shares = info.get("sharesOutstanding")
+            name = info.get("shortName", symbol)
+            
+            if market_cap and book_value and shares and not hist.empty:
+                total_book_value = book_value * shares
                 
-                margin_of_safety = ((target_price - current_price) / current_price) * 100
-                
-                # Determine firm size category dynamically based on standard Wall Street caps
-                if market_cap >= 1e10:
-                    company_size = "Large-Cap"
-                elif market_cap >= 2e9:
-                    company_size = "Mid-Cap"
-                else:
-                    company_size = "Small-Cap"
-                
-                # Ultimate universal score formulation (Safety margin + core financial health)
-                score = margin_of_safety * 1.3 + (pm_pct * 0.2) + (fcf_yield * 0.4) - (min(de_ratio, 3.0) * 5)
-                
-                data_list.append({
-                    "Ticker": t,
-                    "Company Name": info.get('shortName', t),
-                    "Market Segment": company_size,
-                    "Market Cap ($B)": round(market_cap / 1e9, 2),
-                    "Current Price": round(current_price, 2),
-                    "Target Price": round(target_price, 2),
-                    "Margin of Safety (%)": round(margin_of_safety, 1),
-                    "Net Profit Margin": f"{round(pm_pct, 1)}%",
-                    "Winning Score": round(max(0, min(100, score)), 1)
-                })
-    except Exception:
-        continue
+                # סינון: רק מניות שבהן שווי השוק עולה על הערך המאזני המקורי
+                if market_cap > total_book_value and total_book_value > 0:
+                    pb_ratio = market_cap / total_book_value
+                    
+                    # חישוב ביצועי היום האחרון (היום שבו הקוד מורץ)
+                    last_close = hist['Close'].iloc[-1]
+                    prev_close = hist['Close'].iloc[-2] if len(hist) > 1 else last_close
+                    day_change_pct = ((last_close - prev_close) / prev_close) * 100
+                    volume = hist['Volume'].iloc[-1]
+                    
+                    # סיווג סוג המנייה
+                    if market_cap >= 10e9:
+                        cap_type = "Large Cap"
+                    elif market_cap >= 2e9:
+                        cap_type = "Mid Cap"
+                    else:
+                        cap_type = "Small/Micro Cap"
+                    
+                    results.append({
+                        "Ticker": symbol,
+                        "Company": name,
+                        "Cap Size": cap_type,
+                        "Market Cap ($B)": round(market_cap / 1e9, 2),
+                        "Book Value ($B)": round(total_book_value / 1e9, 2),
+                        "P/B Ratio": round(pb_ratio, 2),
+                        "Daily Change (%)": round(day_change_pct, 2)
+                    })
+                    
+                    # ניסוח הפסקה היומית עבור המנייה
+                    direction = "עלה" if day_change_pct >= 0 else "ירד"
+                    summary_text = (
+                        f"בתאריך {current_date_str}, מניית {name} ({symbol}) נסגרה במחיר של ${round(last_close, 2)}. "
+                        f"המחיר {direction} ב-{abs(round(day_change_pct, 2))}% לעומת יום המסחר הקודם, עם נפח מסחר של {int(volume):,} מניות. "
+                        f"נכון להיום, שווי השוק שלה עומד על ${round(market_cap / 1e9, 2)}B לעומת ערך בספרים של ${round(total_book_value / 1e9, 2)}B (יחס P/B של {round(pb_ratio, 2)})."
+                    )
+                    daily_summaries[symbol] = summary_text
+        except Exception:
+            continue
+            
+    df = pd.DataFrame(results)
+    
+    # מיון מחדש בזמן אמת לפי שווי השוק העדכני להיום
+    df_top50 = df.sort_values(by="Market Cap ($B)", ascending=False).head(50).reset_index(drop=True)
+    
+    return df_top50, daily_summaries, current_date_str
 
-df = pd.DataFrame(data_list)
+# הרצת הסריקה
+df_top50, summaries, date_str = scan_and_analyze_market(tickers)
 
-if not df.empty:
-    # Filter and extract precisely the Top 50 ranked stocks
-    df = df.sort_values(by="Winning Score", ascending=False).head(50).reset_index(drop=True)
-    
-    # 1. Clean Table Layout Execution
-    st.subheader("📋 The Ultimate Top 50 Most Attractive Value Stocks")
-    
-    df_display = df.copy()
-    df_display["Margin of Safety (%)"] = df_display["Margin of Safety (%)"].apply(lambda x: f"+{x}%" if x > 0 else f"{x}%")
-    df_display["Current Price"] = df_display["Current Price"].apply(lambda x: f"${x}")
-    df_display["Target Price"] = df_display["Target Price"].apply(lambda x: f"${x}")
-    df_display["Market Cap ($B)"] = df_display["Market Cap ($B)"].apply(lambda x: f"${x:,}B")
-    
-    st.dataframe(df_display, use_container_width=True)
-    
-    # 2. Clean Chart Layout Execution (Displaying all 50 sorted beautifully)
-    st.subheader("📉 Chart: All Top 50 Selected Stocks Ranked by Value & Attractiveness Score")
-    
-    fig = px.bar(
-        df, 
-        x="Ticker", 
-        y="Winning Score", 
-        color="Market Segment", # Dynamic color theme based on whether it is large, mid or small cap
-        text="Winning Score",
-        labels={"Winning Score": "Score (0-100)", "Ticker": "Stock Ticker", "Market Segment": "Company Size"},
-        title="Comprehensive Ranking of the Top 50 Value Opportunities",
-        color_discrete_map={"Large-Cap": "#1a5f7a", "Mid-Cap": "#57c5b6", "Small-Cap": "#159895"}
-    )
-    
-    fig.update_layout(xaxis_title="Stock Ticker", yaxis_title="Score (Higher = More Attractive Opportunity)")
-    st.plotly_chart(fig, use_container_width=True)
-    
-    # CSV generation trigger
-    csv = df.to_csv(index=False).encode('utf-8-sig')
-    st.download_button(label="📥 Download Ultimate 50 List as CSV File", data=csv, file_name="ultimate_top_50_stocks.csv", mime="text/csv")
-else:
-    st.error("An error occurred while compiling fresh market records. Please refresh the dashboard to launch a new automated scan.")
+# 2. הצגת הטבלה הדינמית
+print(f"\n================ 50 המניות המובילות נכון ל-{date_str} ================")
+print(df_top50.to_string(index=False))
+
+# 3. יצירת הגרף (בסגנון התמונה)
+plt.figure(figsize=(16, 7))
+
+# מיון 15 המניות המובילות בגרף לפי יחס P/B כדי לזהות את האטרקטיביות ביותר
+df_chart = df_top50.sort_values(by="P/B Ratio", ascending=True).head(15)
+
+bars = plt.bar(df_chart["Ticker"], df_chart["P/B Ratio"], color="#4A7BB0", width=0.45)
+
+# הדגשת המניה הראשונה בירוק (כמו בתמונה)
+if len(bars) > 0:
+    bars[0].set_color("#72B063")
+
+# קו תמחור ממוצע באדום
+avg_pb = df_chart["P/B Ratio"].mean()
+plt.axhline(y=avg_pb, color="red", linestyle="--", linewidth=1.5, label=f"תמחור ממוצע ({round(avg_pb, 2)})")
+
+plt.xticks(rotation=45, ha="right", fontsize=10)
+plt.ylabel("שווי החברה ביחס לערך המאזני (P/B Ratio)", fontsize=12)
+plt.title(f"סריקת מניות מנצחות נכון ל-{date_str}", fontsize=14, fontweight="bold")
+plt.grid(axis="y", linestyle=":", alpha=0.6)
+plt.legend()
+plt.tight_layout()
+plt.show()
+
+# 4. פירוט יומי מורחב לכל מנייה שנכנסה לטבלה
+print("\n" + "="*80)
+print(f"סיכום אירועי יום המסחר האחרון ({date_str}) עבור כל מנייה בטבלה:")
+print("="*80)
+
+for idx, row in df_top50.iterrows():
+    symbol = row["Ticker"]
+    if symbol in summaries:
+        print(f"\n[{idx + 1}] {row['Company']} ({symbol}):")
+        print(summaries[symbol])
