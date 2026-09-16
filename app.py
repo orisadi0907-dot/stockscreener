@@ -73,22 +73,27 @@ def scan_market(symbol_list):
                     else:
                         cap_type = "Small/Micro Cap"
                     
+                    mcap_billion = round(market_cap / 1e9, 2)
+                    bval_billion = round(total_book_value / 1e9, 2)
+                    
+                    # הוספת סימני $ ו-B לתצוגה בטבלה
                     results.append({
                         "סימול": symbol,
                         "שם החברה": name,
                         "סוג חברה": cap_type,
-                        "מחיר עדכני ($)": round(last_close, 2),
-                        "שווי שוק ($B)": round(market_cap / 1e9, 2),
-                        "ערך בספרים ($B)": round(total_book_value / 1e9, 2),
+                        "מחיר עדכני": f"${round(last_close, 2):,}",
+                        "שווי שוק": f"${mcap_billion:,}B",
+                        "ערך בספרים": f"${bval_billion:,}B",
                         "יחס P/B": round(pb_ratio, 2),
-                        "שינוי יומי (%)": round(day_change_pct, 2)
+                        "שינוי יומי (%)": f"{round(day_change_pct, 2)}%",
+                        "_mcap_raw": mcap_billion  # שדה עזר מוסתר למיון נומרי מדויק
                     })
                     
                     direction = "עלה" if day_change_pct >= 0 else "ירד"
                     summary_text = (
-                        f"בתאריך **{current_date_str}** (עדכון שעון ישראל: {current_time_str}), מניית **{name} ({symbol})** נסחרה במחיר עדכני של **${round(last_close, 2)}**. "
+                        f"בתאריך **{current_date_str}** (עדכון שעון ישראל: {current_time_str}), מניית **{name} ({symbol})** נסחרה במחיר עדכני של **${round(last_close, 2):,}**. "
                         f"מחיר המנייה **{direction} ב-{abs(round(day_change_pct, 2))}%** לעומת מחיר הסגירה הקודם, עם נפח מסחר של **{int(volume):,}** מניות. "
-                        f"נכון לרגע זה, שווי השוק עומד על **${round(market_cap / 1e9, 2)}B** לעומת ערך מקורי/מאזני בספרים של **${round(total_book_value / 1e9, 2)}B** (יחס P/B של **{round(pb_ratio, 2)}**)."
+                        f"נכון לרגע זה, שווי השוק עומד על **${mcap_billion:,}B** לעומת ערך מקורי/מאזני בספרים של **${bval_billion:,}B** (יחס P/B של **{round(pb_ratio, 2)}**)."
                     )
                     daily_summaries[symbol] = summary_text
         except Exception:
@@ -96,10 +101,11 @@ def scan_market(symbol_list):
             
     df = pd.DataFrame(results)
     if not df.empty:
-        # מיון מחדש לפי שווי השוק העדכני להיום
-        df = df.sort_values(by="שווי שוק ($B)", ascending=False).head(50).reset_index(drop=True)
-        # הוספת עמודת מיקום עדכנית
+        # מיון מחדש לפי שווי השוק העדכני
+        df = df.sort_values(by="_mcap_raw", ascending=False).head(50).reset_index(drop=True)
+        # הוספת עמודת מיקום עדכנית והסרת שדה העזר
         df.insert(0, "מיקום בטבלה", range(1, len(df) + 1))
+        df = df.drop(columns=["_mcap_raw"])
         
     return df, daily_summaries, current_date_str, current_time_str
 
@@ -112,16 +118,14 @@ if not df_top50.empty:
     # הצגת הטבלה הדינמית
     st.dataframe(df_top50, use_container_width=True)
     
-    # הצגת הגרף בתיאום מלא עם הטבלה
+    # הצגת הגרף
     st.subheader("📈 גרף השוואתי: יחס P/B עבור המניות המובילות בטבלה")
     fig, ax = plt.subplots(figsize=(14, 5))
     
-    # לקחת בדיוק את 15 המניות הראשונות בטבלה לפי המיקום שלהן
     df_chart = df_top50.head(15)
     
     bars = ax.bar(df_chart["סימול"], df_chart["יחס P/B"], color="#4A7BB0", width=0.45)
     
-    # הדגשת המניה הראשונה (מיקום 1 בטבלה) בירוק
     if len(bars) > 0:
         bars[0].set_color("#72B063")
         
