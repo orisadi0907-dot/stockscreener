@@ -8,7 +8,7 @@ import pytz
 # הגדרת תצורת העמוד
 st.set_page_config(page_title="סורק מניות גלובלי בזמן אמת", layout="wide")
 
-# מנגנון רענון אוטומטי של העמוד בכל 10 דקות (600,000 מילי-שניות)
+# מנגנון רענון אוטומטי של העמוד בכל 10 דקות
 try:
     from streamlit_autorefresh import st_autorefresh
     st_autorefresh(interval=600000, key="datarefresh")
@@ -16,7 +16,7 @@ except ImportError:
     pass
 
 st.title("📊 סורק מניות מנצחות: יחס שווי שוק מול ערך מקורי")
-st.caption("🔄 המערכת מתעדכנת אוטומטית בכל 10 דקות ומחשבת מחדש את דירוג המניות והמחירים בזמן אמת.")
+st.caption("🔄 המערכת מתעדכנת אוטומטית בכל 10 דקות ומחשבת מחדש את דירוג המניות, המחירים ואירועי החדשות בזמן אמת.")
 
 # רשימת מניות מגוונת (גדולות, בינוניות וקטנות)
 tickers = [
@@ -31,13 +31,11 @@ tickers = [
     "CCS", "TPH", "GRBK", "VHI", "GENC", "ZEUS", "BOOT", "CAL", "FL", "BHE"
 ]
 
-# שמירה בזיכרון מטמון ל-10 דקות בלבד (ttl=600)
 @st.cache_data(ttl=600)
 def scan_market(symbol_list):
     results = []
     daily_summaries = {}
     
-    # הגדרת אזור זמן ישראל המדויק
     israel_tz = pytz.timezone('Asia/Jerusalem')
     now = datetime.now(israel_tz)
     current_date_str = now.strftime("%d/%m/%Y")
@@ -57,7 +55,6 @@ def scan_market(symbol_list):
             if market_cap and book_value and shares and not hist.empty:
                 total_book_value = book_value * shares
                 
-                # סינון: רק מניות שבהן שווי השוק עולה על הערך בספרים
                 if market_cap > total_book_value and total_book_value > 0:
                     pb_ratio = market_cap / total_book_value
                     
@@ -76,7 +73,6 @@ def scan_market(symbol_list):
                     mcap_billion = round(market_cap / 1e9, 2)
                     bval_billion = round(total_book_value / 1e9, 2)
                     
-                    # הוספת סימני $ ו-B לתצוגה בטבלה
                     results.append({
                         "סימול": symbol,
                         "שם החברה": name,
@@ -86,30 +82,67 @@ def scan_market(symbol_list):
                         "ערך בספרים": f"${bval_billion:,}B",
                         "יחס P/B": round(pb_ratio, 2),
                         "שינוי יומי (%)": f"{round(day_change_pct, 2)}%",
-                        "_mcap_raw": mcap_billion  # שדה עזר מוסתר למיון נומרי מדויק
+                        "_mcap_raw": mcap_billion
                     })
                     
-                    direction = "עלה" if day_change_pct >= 0 else "ירד"
-                    summary_text = (
-                        f"בתאריך **{current_date_str}** (עדכון שעון ישראל: {current_time_str}), מניית **{name} ({symbol})** נסחרה במחיר עדכני של **${round(last_close, 2):,}**. "
-                        f"מחיר המנייה **{direction} ב-{abs(round(day_change_pct, 2))}%** לעומת מחיר הסגירה הקודם, עם נפח מסחר של **{int(volume):,}** מניות. "
-                        f"נכון לרגע זה, שווי השוק עומד על **${mcap_billion:,}B** לעומת ערך מקורי/מאזני בספרים של **${bval_billion:,}B** (יחס P/B של **{round(pb_ratio, 2)}**)."
-                    )
-                    daily_summaries[symbol] = summary_text
+                    # ניתוח חדשות ואירוע משפיע
+                    news_list = ticker.news
+                    news_summary = "לא אותרו אירועים חריגים ביממה האחרונה."
+                    news_time_str = current_date_str
+                    impact_tag = "⚪ ניטרלית"
+                    
+                    if news_list and len(news_list) > 0:
+                        first_news = news_list[0]
+                        # טיפול במבנה הנתונים המשתנה של yfinance
+                        title = first_news.get('title') or first_news.get('content', {}).get('title', '')
+                        pub_time = first_news.get('providerPublishTime') or first_news.get('content', {}).get('pubDate')
+                        
+                        if pub_time:
+                            if isinstance(pub_time, (int, float)):
+                                event_dt = datetime.fromtimestamp(pub_time, israel_tz)
+                            else:
+                                event_dt = datetime.now(israel_tz)
+                            news_time_str = event_dt.strftime("%d/%m/%Y בשעה %H:%M")
+                        
+                        if title:
+                            # קביעת הערכת השפעה לפי כיוון השינוי היומי או מילות מפתח
+                            if day_change_pct >= 0.5:
+                                impact_tag = "🟢 לטובה (השפעה חיובית)"
+                            elif day_change_pct <= -0.5:
+                                impact_tag = "🔴 לרעה (השפעה שלילית)"
+                            else:
+                                impact_tag = "🟡 ניטרלית / מעורבת"
+                                
+                            news_summary = f"{title}"
+
+                    direction_text = "עלו" if day_change_pct >= 0 else "ירדו"
+                    
+                    # בניית ניתוח מובנה ומסודר בנקודות
+                    structured_summary = {
+                        "date_time": f"{current_date_str} (שעון ישראל: {current_time_str})",
+                        "price": f"${round(last_close, 2):,}",
+                        "change": f"{direction_text} ב-{abs(round(day_change_pct, 2))}%",
+                        "volume": f"{int(volume):,}",
+                        "mcap": f"${mcap_billion:,}B",
+                        "book": f"${bval_billion:,}B",
+                        "pb": round(pb_ratio, 2),
+                        "event_title": news_summary,
+                        "event_date": news_time_str,
+                        "event_impact": impact_tag
+                    }
+                    daily_summaries[symbol] = structured_summary
         except Exception:
             continue
             
     df = pd.DataFrame(results)
     if not df.empty:
-        # מיון מחדש לפי שווי השוק העדכני
         df = df.sort_values(by="_mcap_raw", ascending=False).head(50).reset_index(drop=True)
-        # הוספת עמודת מיקום עדכנית והסרת שדה העזר
         df.insert(0, "מיקום בטבלה", range(1, len(df) + 1))
         df = df.drop(columns=["_mcap_raw"])
         
     return df, daily_summaries, current_date_str, current_time_str
 
-with st.spinner("סורק את השוק ומעדכן מחירים ומיקומים בזמן אמת..."):
+with st.spinner("סורק את השוק ומעדכן מחירים, מיקומים וחדשות בזמן אמת..."):
     df_top50, summaries, date_str, time_str = scan_market(tickers)
 
 if not df_top50.empty:
@@ -123,7 +156,6 @@ if not df_top50.empty:
     fig, ax = plt.subplots(figsize=(14, 5))
     
     df_chart = df_top50.head(15)
-    
     bars = ax.bar(df_chart["סימול"], df_chart["יחס P/B"], color="#4A7BB0", width=0.45)
     
     if len(bars) > 0:
@@ -140,13 +172,29 @@ if not df_top50.empty:
     
     st.pyplot(fig)
     
-    # פירוט יומי מורחב לכל מנייה בטבלה
-    st.subheader(f"📝 ניתוח אירועים ועדכון מחירים עבור כל מנייה (נכון ל-{date_str})")
+    # ניתוח יומי מסודר בנקודות לכל מנייה
+    st.subheader(f"📝 ניתוח אירועים ועדכוני מסחר מפורטים ({date_str})")
     for idx, row in df_top50.iterrows():
         symbol = row["סימול"]
         if symbol in summaries:
-            st.markdown(f"**מיקום #{row['מיקום בטבלה']} - {row['שם החברה']} ({symbol})**")
-            st.write(summaries[symbol])
+            s = summaries[symbol]
+            
+            st.markdown(f"### מיקום #{row['מיקום בטבלה']} - {row['שם החברה']} (`{symbol}`)")
+            
+            col1, col2 = st.columns([1, 1])
+            with col1:
+                st.markdown("**📊 נתוני מסחר מעודכנים:**")
+                st.markdown(f"* **מחיר עדכני:** {s['price']}")
+                st.markdown(f"* **שינוי יומי:** הביצועים {s['change']}")
+                st.markdown(f"* **נפח מסחר:** {s['volume']} מניות")
+                st.markdown(f"* **שווי שוק מול ערך בספרים:** {s['mcap']} מול {s['book']} (יחס P/B: `{s['pb']}`)")
+                
+            with col2:
+                st.markdown("**📰 אירוע מפתח משפיע (מהימים האחרונים):**")
+                st.markdown(f"* **תאריך ושעה מדויקים:** {s['event_date']}")
+                st.markdown(f"* **אירוע/דיווח:** {s['event_title']}")
+                st.markdown(f"* **הערכת השפעה על המחיר:** {s['event_impact']}")
+                
             st.divider()
 else:
     st.error("לא נשלפו נתונים. אנא רענן את העמוד.")
