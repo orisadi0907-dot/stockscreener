@@ -3,6 +3,7 @@ import pandas as pd
 import yfinance as yf
 import matplotlib.pyplot as plt
 from datetime import datetime
+import pytz
 
 # הגדרת תצורת העמוד
 st.set_page_config(page_title="סורק מניות גלובלי בזמן אמת", layout="wide")
@@ -30,12 +31,15 @@ tickers = [
     "CCS", "TPH", "GRBK", "VHI", "GENC", "ZEUS", "BOOT", "CAL", "FL", "BHE"
 ]
 
-# שמירה בזיכרון ל-10 דקות בלבד (ttl=600) כדי לאפשר עדכון דירוג ומחירים קבוע
+# שמירה בזיכרון מטמון ל-10 דקות בלבד (ttl=600)
 @st.cache_data(ttl=600)
 def scan_market(symbol_list):
     results = []
     daily_summaries = {}
-    now = datetime.now()
+    
+    # הגדרת אזור זמן ישראל המדויק
+    israel_tz = pytz.timezone('Asia/Jerusalem')
+    now = datetime.now(israel_tz)
     current_date_str = now.strftime("%d/%m/%Y")
     current_time_str = now.strftime("%H:%M:%S")
     
@@ -82,7 +86,7 @@ def scan_market(symbol_list):
                     
                     direction = "עלה" if day_change_pct >= 0 else "ירד"
                     summary_text = (
-                        f"בתאריך **{current_date_str}** (עדכון אחרון בשעה {current_time_str}), מניית **{name} ({symbol})** נסחרה במחיר עדכני של **${round(last_close, 2)}**. "
+                        f"בתאריך **{current_date_str}** (עדכון שעון ישראל: {current_time_str}), מניית **{name} ({symbol})** נסחרה במחיר עדכני של **${round(last_close, 2)}**. "
                         f"מחיר המנייה **{direction} ב-{abs(round(day_change_pct, 2))}%** לעומת מחיר הסגירה הקודם, עם נפח מסחר של **{int(volume):,}** מניות. "
                         f"נכון לרגע זה, שווי השוק עומד על **${round(market_cap / 1e9, 2)}B** לעומת ערך מקורי/מאזני בספרים של **${round(total_book_value / 1e9, 2)}B** (יחס P/B של **{round(pb_ratio, 2)}**)."
                     )
@@ -92,7 +96,7 @@ def scan_market(symbol_list):
             
     df = pd.DataFrame(results)
     if not df.empty:
-        # מיון מחדש בכל הרצה לפי שווי השוק העדכני להיום
+        # מיון מחדש לפי שווי השוק העדכני להיום
         df = df.sort_values(by="שווי שוק ($B)", ascending=False).head(50).reset_index(drop=True)
         # הוספת עמודת מיקום עדכנית
         df.insert(0, "מיקום בטבלה", range(1, len(df) + 1))
@@ -103,27 +107,31 @@ with st.spinner("סורק את השוק ומעדכן מחירים ומיקומי
     df_top50, summaries, date_str, time_str = scan_market(tickers)
 
 if not df_top50.empty:
-    st.subheader(f"🏆 Top 50 מניות מנצחות (עדכון תאריך: {date_str} | שעה: {time_str})")
+    st.subheader(f"🏆 Top 50 מניות מנצחות (עדכון שעון ישראל: {date_str} | שעה: {time_str})")
     
     # הצגת הטבלה הדינמית
     st.dataframe(df_top50, use_container_width=True)
     
-    # הצגת הגרף
-    st.subheader("📈 גרף השוואתי: יחס שווי שוק מול ערך מקורי")
-    fig, ax = plt.subplots(figsize=(12, 5))
-    df_chart = df_top50.sort_values(by="יחס P/B", ascending=True).head(15)
+    # הצגת הגרף בתיאום מלא עם הטבלה
+    st.subheader("📈 גרף השוואתי: יחס P/B עבור המניות המובילות בטבלה")
+    fig, ax = plt.subplots(figsize=(14, 5))
+    
+    # לקחת בדיוק את 15 המניות הראשונות בטבלה לפי המיקום שלהן
+    df_chart = df_top50.head(15)
     
     bars = ax.bar(df_chart["סימול"], df_chart["יחס P/B"], color="#4A7BB0", width=0.45)
+    
+    # הדגשת המניה הראשונה (מיקום 1 בטבלה) בירוק
     if len(bars) > 0:
         bars[0].set_color("#72B063")
         
     avg_pb = df_chart["יחס P/B"].mean()
     ax.axhline(y=avg_pb, color="red", linestyle="--", linewidth=1.5, label=f"תמחור ממוצע ({round(avg_pb, 2)})")
     
-    ax.set_ylabel("יחס P/B")
-    ax.set_title(f"סריקת מניות מובילות נכון ל-{date_str} בשעה {time_str}")
+    ax.set_ylabel("יחס P/B (שווי שוק / ערך מאזני)")
+    ax.set_title(f"יחס P/B של 15 המניות המובילות בטבלה - נכון ל-{date_str} בשעה {time_str}")
     ax.legend()
-    plt.xticks(rotation=45)
+    plt.xticks(rotation=0, fontweight="bold", fontsize=10)
     plt.grid(axis="y", linestyle=":", alpha=0.6)
     
     st.pyplot(fig)
